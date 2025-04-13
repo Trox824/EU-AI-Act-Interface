@@ -58,7 +58,7 @@ Format your response clearly with headings for each point (e.g., **Key Features 
             response = self.client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.5,  # Slightly lower temp for more factual summary
+                temperature=0.2,  # Slightly lower temp for more factual summary
                 max_tokens=600  # Allow more tokens for potentially detailed analysis
             )
             end_time = time.time()

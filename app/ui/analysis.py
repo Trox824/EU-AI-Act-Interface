@@ -97,12 +97,6 @@ def display_footer() -> None:
 def display_analysis_results(results: AnalysisResults, app_name: str) -> None:
     st.divider()
     st.subheader(f"Analysis Results for: {app_name}")
-    
-    # Always display developer details if available
-    if results.developer_details:
-        display_developer_info(results.developer_details)
-    
-    # Check for errors
     if results.has_error():
         display_error(results.error)
     else:

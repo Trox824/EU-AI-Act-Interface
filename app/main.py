@@ -128,8 +128,8 @@ def main():
                     analysis_results = show_analysis_log(
                         st.session_state.selected_app_name, 
                         run_analysis, 
-                        app_id=st.session_state.selected_app_id, 
-                        app_name=st.session_state.selected_app_name,
+                        st.session_state.selected_app_id,    
+                        st.session_state.selected_app_name,  
                         analysis_service=analysis_service,
                         playstore_service=playstore_service
                     )
