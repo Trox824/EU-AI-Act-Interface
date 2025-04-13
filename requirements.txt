@@ -1,0 +1,8 @@
+streamlit
+pandas
+openai
+google-play-scraper
+tqdm
+selenium
+beautifulsoup4
+webdriver-manager 
