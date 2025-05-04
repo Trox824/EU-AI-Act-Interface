@@ -82,6 +82,55 @@ def display_eu_ai_act_note() -> None:
         Assessing specific risks or threats according to the EU AI Act criteria would require a separate, dedicated analysis based on the Act's defined risk categories and rules, which is **not** implemented here.
     """)
 
+def display_eu_ai_act_classification(classification_result: dict) -> None:
+    """Display the EU AI Act classification results."""
+    st.subheader("EU AI Act Classification")
+    
+    # Define colors for different risk types
+    risk_colors = {
+        "Unacceptable risk": "red",
+        "High risk": "orange",
+        "Limited risk": "blue",
+        "Minimal Risk": "green"
+    }
+    
+    risk_type = classification_result.get('risk_type', 'Unknown')
+    color = risk_colors.get(risk_type, "gray")
+    
+    # Display the risk classification prominently
+    st.markdown(f"<h3 style='color: {color};'>Classification: {risk_type}</h3>", unsafe_allow_html=True)
+    
+    # Get the list of triggered questions
+    triggered_questions = classification_result.get('triggered_questions', [])
+    
+    # If there are triggered questions, display them
+    if triggered_questions:
+        st.markdown("**Triggering Criteria:**")
+        for trigger in triggered_questions:
+            st.markdown(f"- **Question:** _{trigger['question']}_")
+            st.markdown(f"  - **Reasoning:** {trigger['reasoning']}")
+            # Optionally display confidence for individual triggers if needed
+            # st.markdown(f"  - Confidence: {trigger.get('confidence', 'N/A'):.2f}") 
+        st.write(" ") # Add some space
+    elif risk_type == "Minimal Risk":
+        st.markdown("No specific criteria for higher risk levels were triggered.")
+    
+    # Show overall confidence score
+    confidence = classification_result.get('confidence_score', 0.0)
+    st.progress(confidence)
+    st.caption(f"Overall Confidence: {confidence:.2f}")
+    
+    # Add explanation about risk categories
+    with st.expander("About EU AI Act Risk Categories", expanded=False):
+        st.markdown("""
+        **EU AI Act Risk Categories:**
+        
+        - **Unacceptable risk:** AI systems that pose a clear threat to people's safety, livelihoods, or rights. These are prohibited.
+        - **High risk:** AI systems with significant potential for harm to health, safety, fundamental rights, environment, democracy, or rule of law.
+        - **Limited risk:** AI systems with specific transparency obligations, like disclosing that content is AI-generated.
+        - **Minimal Risk:** AI systems with minimal or no risk that are not specifically regulated.
+        """)
+
 def display_footer() -> None:
     """Display the footer inside a div for CSS targeting."""
     footer_html = """
@@ -110,9 +159,13 @@ def display_analysis_results(results: AnalysisResults, app_name: str) -> None:
         
         # Display sample reviews
         display_sample_reviews(results.filtered_reviews_sample)
-    
-    # Display EU AI Act note
-    display_eu_ai_act_note()
+        
+        # Display EU AI Act classification if available
+        if hasattr(results, 'eu_ai_act_classification') and results.eu_ai_act_classification:
+            display_eu_ai_act_classification(results.eu_ai_act_classification)
+        else:
+            # Display EU AI Act note if no classification is available
+            display_eu_ai_act_note()
     
     # Removed footer call from here
     # display_footer() 

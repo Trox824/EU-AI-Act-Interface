@@ -6,7 +6,7 @@ APP_DESCRIPTION = "Analyze Google Play Store reviews for AI apps and compare use
 LAYOUT = "wide"  # Streamlit layout
 
 # API settings
-OPENAI_MODEL = "gpt-4o-mini"  # Model to use for analysis
+OPENAI_MODEL = "gpt-4.1-nano"  # Model to use for analysis
 
 # Review settings
 MAX_REVIEWS_TO_FETCH = 1000  # Limit reviews for performance

@@ -15,8 +15,8 @@ def search_input(value: str = "") -> str:
     
     # Get input from user
     query = st.text_input(
-        "Search for an AI app on Google Play:", 
-        placeholder="e.g., AI chatbot, AI image generator",
+        "Search for an app on Google Play:", 
+        placeholder="e.g., ChatGPT, Gemini, Midjourney",
         value=value,
         key="search_query"
     )
@@ -35,6 +35,10 @@ def debounced_search(query: str, debounce_time: float = 0.8) -> List[Dict[str, s
     Returns:
         List of app dictionaries (title, appId, developer)
     """
+    # Initialize search results in session state if not exists
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = []
+    
     # Skip empty queries
     if not query:
         return []
@@ -44,7 +48,7 @@ def debounced_search(query: str, debounce_time: float = 0.8) -> List[Dict[str, s
     
     # Check if enough time has passed since last search
     if current_time - st.session_state.last_search_time < debounce_time:
-        return st.session_state.get('search_results', [])
+        return st.session_state.search_results
     
     # Update last search time
     st.session_state.last_search_time = current_time
@@ -54,7 +58,12 @@ def debounced_search(query: str, debounce_time: float = 0.8) -> List[Dict[str, s
         st.session_state.playstore_service = PlayStoreService()
     
     # Perform the search
-    return perform_search(query, st.session_state.playstore_service)
+    results = perform_search(query, st.session_state.playstore_service)
+    
+    # Store results in session state
+    st.session_state.search_results = results
+    
+    return results
 
 def display_app_list(app_results: List[Dict[str, str]]) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -69,6 +78,7 @@ def display_app_list(app_results: List[Dict[str, str]]) -> Tuple[Optional[str], 
     if not app_results:
         return None, None
 
+    st.subheader("Search Results")
     st.write("**Select an app to analyze:**")
     selected_app_title = None
     selected_app_id = None
@@ -88,6 +98,7 @@ def display_app_list(app_results: List[Dict[str, str]]) -> Tuple[Optional[str], 
             if st.button(button_label, key=f"app_button_{app_id}", use_container_width=True):
                 selected_app_title = title
                 selected_app_id = app_id
+                st.success(f"Selected app: {title}")
                 
     return selected_app_title, selected_app_id
 
@@ -107,7 +118,7 @@ def perform_search(query: str, playstore_service: PlayStoreService = None) -> Li
         search_results = playstore_service.search_apps(query) # Now returns list of dicts
         
         if not search_results:
-            st.warning(f"No apps found matching '{query}'. Try a different search term.")
+            st.info(f"No apps found matching '{query}'. Try a different search term.")
             return []
         
         # Limit to top 10 apps (already a list)

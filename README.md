@@ -1,6 +1,6 @@
-# AI App Review Analyzer
+# AI App Review Analyzer with EU AI Act Classification
 
-This application analyzes Google Play Store reviews for AI apps and compares user feedback with developer descriptions.
+This application analyzes Google Play Store reviews for AI apps, compares user feedback with developer descriptions, and performs risk classification according to the EU AI Act criteria.
 
 ## Features
 
@@ -9,7 +9,19 @@ This application analyzes Google Play Store reviews for AI apps and compares use
 - Filter reviews by length
 - Analyze reviews with OpenAI to extract key insights
 - Compare user feedback with developer claims
+- Classify apps according to EU AI Act risk categories
 - Display detailed logs of each step
+
+## EU AI Act Classification
+
+The application includes a feature to automatically classify apps according to the EU AI Act risk categories:
+
+- **Unacceptable risk:** AI systems that pose a clear threat to people's safety, livelihoods, or rights. These are prohibited.
+- **High risk:** AI systems with significant potential for harm to health, safety, fundamental rights, environment, democracy, or rule of law.
+- **Limited risk:** AI systems with specific transparency obligations, like disclosing that content is AI-generated.
+- **Minimal Risk:** AI systems with minimal or no risk that are not specifically regulated.
+
+The classification is performed using OpenAI's GPT-4.1-nano model with structured output parsing for more reliable results, working through a series of assessment questions for each risk category.
 
 ## Installation
 
@@ -56,11 +68,12 @@ The project follows a modular architecture:
   │   ├── analysis.py      # OpenAI analysis logic
   │   └── logger.py        # Logging setup
   ├── ui/                  # UI components
-  │   ├── search.py        # Search interface
-  │   ├── analysis.py      # Analysis display
-  │   └── status.py        # Status display
+  │   ├── input.py         # Input form components
+  │   └── analysis.py      # Analysis display
   └── utils/               # Utility functions
       └── data_utils.py    # Data manipulation utilities
+/asset
+  └── EU_AI_Act_Assessment_Questions.csv  # EU AI Act assessment criteria
 ```
 
 ## Deploying to Streamlit Cloud

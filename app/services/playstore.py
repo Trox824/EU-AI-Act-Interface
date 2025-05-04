@@ -101,7 +101,7 @@ class PlayStoreService:
             return AppDetails.from_minimal(app_id, app_name)
     
     def get_app_reviews(self, app_id: str, app_name: str, status_logger: Optional[StatusLogger] = None, 
-                        max_reviews: int = MAX_REVIEWS_TO_FETCH) -> List[Review]:
+                        max_reviews: int = MAX_REVIEWS_TO_FETCH) -> pd.DataFrame:
         log = status_logger or logger
         log.info(f"Fetching reviews for {app_name} (up to {max_reviews})...")
         
@@ -122,24 +122,26 @@ class PlayStoreService:
             for review_dict in review_results:
                 review = Review.from_dict(app_name, review_dict)
                 review_objects.append(review)
-                
-            return review_objects
+            
+            # Convert list of Review objects to DataFrame
+            reviews_df = create_reviews_dataframe(review_objects)
+            log.info(f"Converted {len(reviews_df)} reviews to DataFrame.")
+            
+            return reviews_df
             
         except exceptions.NotFoundError:
             log.warning(f"Reviews not found for {app_name} ({app_id}).")
-            return []
+            return pd.DataFrame() # Return empty DataFrame
             
         except Exception as e:
             log.error(f"Error retrieving reviews for {app_name}: {e}", exc_info=True)
-            return []
+            return pd.DataFrame() # Return empty DataFrame
     
     def get_app_details_and_reviews(self, app_id: str, app_name: str, 
                                    status_logger: Optional[StatusLogger] = None) -> Tuple[AppDetails, pd.DataFrame]:
         
         app_details = self.get_app_details(app_id, app_name, status_logger)
-        reviews_list = self.get_app_reviews(app_id, app_name, status_logger)
-        
-        reviews_df = create_reviews_dataframe(reviews_list)
+        reviews_df = self.get_app_reviews(app_id, app_name, status_logger)
         
         # Make sure to clean up Selenium driver when done
         self.close_selenium_scraper()

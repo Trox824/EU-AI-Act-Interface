@@ -1,157 +1,128 @@
 """
-Main entry point for the AI App Review Analyzer.
+Main Streamlit application entry point.
 """
 import streamlit as st
+import pandas as pd
+import traceback
+import os
+from typing import Optional
 
-from config.settings import APP_TITLE, APP_DESCRIPTION, LAYOUT
-from services.logger import logger
-from services.playstore import PlayStoreService
+from models.app_data import AppDetails, AnalysisResults
 from services.analysis import AnalysisService
+from services.playstore import PlayStoreService
+from services.logger import StatusLogger
+from ui.analysis import display_analysis_results, display_app_details_table, display_footer
+from ui.input import render_api_key_input
 from ui.search import search_input, debounced_search, display_app_list
-from ui.status import show_analysis_log
-from ui.analysis import display_analysis_results, display_footer, display_app_details_table
 
-def run_analysis(app_id, app_name, analysis_service, playstore_service, **kwargs):
-    # Get app details and reviews
-    app_details, reviews_df = playstore_service.get_app_details_and_reviews(
-        app_id, app_name, status_logger=kwargs.get('status_logger')
-    )
-    
-    # Analyze the app
-    return analysis_service.analyze_app(
-        app_details, reviews_df, status_logger=kwargs.get('status_logger')
-    )
+def load_eu_ai_act_prompts() -> pd.DataFrame:
+    """Load EU AI Act assessment questions from CSV."""
+    try:
+        path = os.path.join("asset", "EU_AI_Act_Assessment_Questions.csv")
+        return pd.read_csv(path)
+    except Exception as e:
+        st.error(f"Failed to load EU AI Act prompts: {str(e)}")
+        return pd.DataFrame(columns=["Type", "Prompt"])
 
 def main():
-    """Main entry point for the application."""
-    # Set up page configuration
-    st.set_page_config(page_title=APP_TITLE, layout=LAYOUT)
+    st.set_page_config(
+        page_title="App Privacy & AI Act Analysis Tool",
+        page_icon="🔍",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    # Display page title and description
-    st.title(APP_TITLE)
-    st.caption(APP_DESCRIPTION)
+    # Add custom CSS
+    st.markdown("""
+    <style>
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 1rem;
+    }
+    .st-emotion-cache-16idsys p {
+        font-size: 14px;
+    }
+    .app-footer {
+        margin-top: 30px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
-    # Initialize session state
-    if 'search_results' not in st.session_state:
-        st.session_state.search_results = [] # Now a list of dicts
-    if 'selected_app_name' not in st.session_state:
-        st.session_state.selected_app_name = None
-    if 'selected_app_id' not in st.session_state:
-        st.session_state.selected_app_id = None
-    if 'selected_app_details' not in st.session_state: # Add state for fetched details
-        st.session_state.selected_app_details = None
-    if 'analysis_results' not in st.session_state:
-        st.session_state.analysis_results = None
-    if 'last_query' not in st.session_state:
-        st.session_state.last_query = ""
-    if 'analysis_triggered' not in st.session_state: # Track if analysis button was clicked
-        st.session_state.analysis_triggered = False
-    if 'playstore_service' not in st.session_state:
-        st.session_state.playstore_service = PlayStoreService()
+    # Title and description
+    st.title("🔍 App Privacy & EU AI Act Analysis Tool")
+    st.markdown("""
+    Analyze mobile apps for privacy practices, user feedback, and EU AI Act compliance.
     
-    main_container = st.container() 
+    👉 Search for an app by name to get started.
+    """)
+
+    # Load EU AI Act prompts
+    eu_ai_act_prompts = load_eu_ai_act_prompts()
     
-    with main_container:
+    # Get OpenAI API key
+    api_key = render_api_key_input()
+    
+    if not api_key:
+        st.warning("Please enter your OpenAI API key to use this app.")
+        display_footer()
+        return
+    
+    # App search functionality
+    query = search_input()
+    app_results = debounced_search(query)
+    selected_app_title, app_id = display_app_list(app_results)
+    
+    # If an app is selected, proceed with analysis
+    if app_id:
+        # Prepare services
         try:
-            analysis_service = AnalysisService()
-            playstore_service = st.session_state.playstore_service
-            col1, col2 = st.columns([1, 1])
-
-            # --- Left Column (Search & Select) ---
-            with col1:
-                st.subheader("Search & Select App")
-                query = search_input(st.session_state.last_query)
+            analysis_service = AnalysisService(api_key=api_key)
+            playstore_service = PlayStoreService()
+            
+            # Setup status logger
+            status_logger = StatusLogger(st.status(f"Starting analysis for {selected_app_title}..."))
+            
+            # Get app info
+            status_logger.update(label=f"Fetching app details for {app_id}...")
+            app_details = playstore_service.get_app_details(app_id=app_id, app_name=selected_app_title)
+            
+            if app_details:
+                # Display app details
+                display_app_details_table(app_details)
                 
-                # Auto-search with debounce when query changes
-                if query != st.session_state.last_query:
-                    st.session_state.last_query = query
-                    st.session_state.selected_app_name = None
-                    st.session_state.selected_app_id = None
-                    st.session_state.analysis_results = None
-                    st.session_state.search_results = [] 
-                    st.session_state.analysis_triggered = False # Reset trigger
-                    
-                    if query:
-                        st.session_state.search_results = debounced_search(query)
-                        st.rerun()
-                    else: # Clear results if query is empty
-                        st.rerun()
-
-                # Display app list if search results exist
-                if st.session_state.search_results:
-                    app_name, app_id = display_app_list(st.session_state.search_results)
-                    
-                    # Handle app selection via button click
-                    if app_name is not None and app_id is not None:
-                        # Check if the selection actually changed
-                        if (app_name != st.session_state.selected_app_name or 
-                            app_id != st.session_state.selected_app_id):
-                            
-                            st.session_state.selected_app_name = app_name
-                            st.session_state.selected_app_id = app_id
-                            st.session_state.analysis_results = None # Clear old analysis results
-                            st.session_state.analysis_triggered = False # Reset trigger
-                            st.session_state.selected_app_details = None # Clear old details first
-                            
-                            # Fetch details immediately
-                            with st.spinner("Fetching app details..."): 
-                                app_details = playstore_service.get_app_details(app_id, app_name)
-                            st.session_state.selected_app_details = app_details
-                            
-                            st.rerun() # Rerun to display details table
-
-            # --- Right Column (Details, Log & Analysis) ---
-            with col2:
-                st.subheader("Analysis Details")
+                # Get reviews
+                status_logger.update(label=f"Fetching reviews for {app_details.name}...")
+                reviews_df = playstore_service.get_app_reviews(app_id=app_id, app_name=selected_app_title)
                 
-                # Display details table if available
-                if st.session_state.selected_app_details:
-                    display_app_details_table(st.session_state.selected_app_details)
-                    st.divider() # Add a separator
+                # Analyze app
+                analysis_results = analysis_service.analyze_app(app_details, reviews_df, status_logger)
                 
-                # Show analysis button only if details are loaded (meaning an app is selected)
-                if st.session_state.selected_app_details:
-                    # Display analysis button
-                    if st.button("Analyze Selected App Reviews"):
-                        st.session_state.analysis_triggered = True
-                        st.session_state.analysis_results = None # Clear previous display
-                        st.rerun() # Rerun to trigger analysis log display
-                elif not st.session_state.selected_app_id and not st.session_state.search_results:
-                    # Show initial message only if no search happened yet
-                    st.info("Search for an app on the left to get started.")
-                elif not st.session_state.selected_app_id:
-                    # Show message if search happened but no selection yet
-                    st.info("Select an app from the list on the left to see its details.")
-
-                # Run analysis and show log if triggered
-                if st.session_state.analysis_triggered and st.session_state.selected_app_id:
-                    analysis_results = show_analysis_log(
-                        st.session_state.selected_app_name, 
-                        run_analysis, 
-                        st.session_state.selected_app_id,    
-                        st.session_state.selected_app_name,  
-                        analysis_service=analysis_service,
-                        playstore_service=playstore_service
+                # Perform EU AI Act classification
+                if not analysis_results.has_error():
+                    status_logger.update(label=f"Performing EU AI Act classification for {app_details.name}...")
+                    analysis_results.eu_ai_act_classification = analysis_service.perform_eu_ai_act_classification(
+                        app_details, 
+                        analysis_results.user_review_analysis,
+                        analysis_results.difference_analysis,
+                        eu_ai_act_prompts,
+                        status_logger
                     )
-                    st.session_state.analysis_results = analysis_results
-                    st.session_state.analysis_triggered = False 
-
-                # Display analysis results if available
-                if st.session_state.analysis_results:
-                    display_analysis_results(
-                        st.session_state.analysis_results,
-                        st.session_state.selected_app_name
-                    )
-
+                
+                # Display analysis results
+                display_analysis_results(analysis_results, app_details.name)
+                
+                # Complete status
+                status_logger.update(label="Analysis completed!", state="complete")
+            else:
+                st.error("Failed to fetch app details. Please try another app.")
+            
         except Exception as e:
-            logger.error(f"Application error: {e}", exc_info=True)
-            st.error(f"An unexpected error occurred: {e}")
-        finally:
-            # Make sure to clean up Selenium resources when the app is done
-            if 'playstore_service' in st.session_state and st.session_state.playstore_service:
-                st.session_state.playstore_service.close_selenium_scraper()
+            traceback_details = traceback.format_exc()
+            st.error(f"An error occurred: {str(e)}")
+            with st.expander("Error Details", expanded=False):
+                st.code(traceback_details)
     
-    # Call footer at the very end
+    # Display footer
     display_footer()
 
 if __name__ == "__main__":
