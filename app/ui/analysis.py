@@ -3,8 +3,7 @@ UI components for displaying analysis results.
 """
 import streamlit as st
 import pandas as pd
-import altair as alt
-from typing import Optional, Dict, Any, List
+from typing import Optional
 
 from models.app_data import AnalysisResults, AppDetails
 
@@ -77,97 +76,6 @@ def display_sample_reviews(reviews_sample: Optional[pd.DataFrame]) -> None:
 def display_error(error_message: str) -> None:
     st.error(f"Analysis could not be completed: {error_message}")
 
-def display_analysis_metrics(results: AnalysisResults) -> None:
-    """Display key analysis metrics as visual indicators."""
-    st.subheader("Analysis Overview")
-    
-    # Calculate metrics from the results
-    review_coverage = min(100, round((results.filtered_review_count / max(1, results.raw_review_count)) * 100))
-    avg_rating = calculate_avg_rating(results.filtered_reviews_sample) if results.filtered_reviews_sample is not None else None
-    sentiment_data = extract_sentiment_data(results.user_review_analysis)
-    
-    # Create metrics display in columns
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric(
-            label="Reviews Analyzed",
-            value=f"{results.filtered_review_count}",
-            delta=f"{review_coverage}% of total",
-            delta_color="normal"
-        )
-    
-    with col2:
-        if avg_rating is not None:
-            st.metric(
-                label="Average Rating",
-                value=f"{avg_rating:.1f}",
-                delta=None
-            )
-        else:
-            st.metric(
-                label="Average Rating",
-                value="N/A",
-                delta=None
-            )
-    
-    with col3:
-        if sentiment_data:
-            display_sentiment_gauge(sentiment_data)
-        else:
-            st.write("Sentiment analysis not available")
-
-def calculate_avg_rating(reviews_df: pd.DataFrame) -> float:
-    """Calculate average rating from reviews dataframe."""
-    if 'score' in reviews_df.columns:
-        return reviews_df['score'].mean()
-    return 0
-
-def extract_sentiment_data(analysis_text: str) -> Dict[str, Any]:
-    """Extract sentiment data from analysis text using simple keyword matching.
-    In a real app, this would use NLP or predefined sentiment scores."""
-    # Simple sentiment analysis based on text keywords
-    positive_keywords = ['positive', 'great', 'good', 'excellent', 'satisfied', 'happy', 'love']
-    negative_keywords = ['negative', 'bad', 'poor', 'terrible', 'disappointed', 'unhappy', 'hate']
-    
-    # Count occurrences (simple approach)
-    positive_count = sum(analysis_text.lower().count(word) for word in positive_keywords)
-    negative_count = sum(analysis_text.lower().count(word) for word in negative_keywords)
-    
-    total = positive_count + negative_count
-    if total == 0:
-        sentiment_score = 0.5  # Neutral if no matches
-    else:
-        sentiment_score = positive_count / total
-    
-    return {
-        'score': sentiment_score,
-        'positive_count': positive_count,
-        'negative_count': negative_count
-    }
-
-def display_sentiment_gauge(sentiment_data: Dict[str, Any]) -> None:
-    """Display a sentiment gauge chart."""
-    score = sentiment_data['score']
-    
-    # Define sentiment label based on score
-    if score >= 0.7:
-        sentiment = "Positive"
-        color = "green"
-    elif score >= 0.4:
-        sentiment = "Neutral"
-        color = "orange"
-    else:
-        sentiment = "Negative"
-        color = "red"
-    
-    st.metric(
-        label="Overall Sentiment",
-        value=sentiment,
-        delta=f"{int(score * 100)}%",
-        delta_color="normal"
-    )
-
 def display_eu_ai_act_note() -> None:
     st.info("""
         **Note:** This analysis focuses on summarizing user reviews and comparing them to developer descriptions.
@@ -192,9 +100,6 @@ def display_analysis_results(results: AnalysisResults, app_name: str) -> None:
     if results.has_error():
         display_error(results.error)
     else:
-        # Display analysis metrics visualization
-        display_analysis_metrics(results)
-        
         # Display review summary analysis
         display_review_summary(results.user_review_analysis, 
                               results.filtered_review_count, 

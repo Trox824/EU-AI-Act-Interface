@@ -10,7 +10,6 @@ from services.analysis import AnalysisService
 from ui.search import search_input, debounced_search, display_app_list
 from ui.status import show_analysis_log
 from ui.analysis import display_analysis_results, display_footer, display_app_details_table
-from ui.custom import load_custom_css, styled_header
 
 def run_analysis(app_id, app_name, analysis_service, playstore_service, **kwargs):
     # Get app details and reviews
@@ -28,11 +27,8 @@ def main():
     # Set up page configuration
     st.set_page_config(page_title=APP_TITLE, layout=LAYOUT)
     
-    # Load custom CSS
-    load_custom_css()
-    
     # Display page title and description
-    styled_header(APP_TITLE, level=1)
+    st.title(APP_TITLE)
     st.caption(APP_DESCRIPTION)
     
     # Initialize session state
