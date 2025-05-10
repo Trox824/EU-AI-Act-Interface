@@ -4,6 +4,7 @@ UI components for displaying analysis results.
 import streamlit as st
 import pandas as pd
 from typing import Optional
+import re
 
 from models.app_data import AnalysisResults, AppDetails
 
@@ -53,7 +54,18 @@ def display_app_details_table(app_details: AppDetails) -> None:
 
 def display_review_summary(analysis: str, filtered_count: int, raw_count: int) -> None:
     st.subheader("User Review Summary (Based on AI Analysis)")
+    
+    # Display the analysis
     st.markdown(analysis)
+    
+    # Extract review numbers from the analysis
+    review_numbers = set(re.findall(r'Review #(\d+)', analysis))
+    
+    # Display citation information
+    if review_numbers:
+        st.markdown("**Cited Reviews:**")
+        st.markdown(f"This analysis is based on {len(review_numbers)} specific reviews (Reviews #{', #'.join(sorted(review_numbers))})")
+    
     st.caption(f"Analyzed {filtered_count} reviews (out of {raw_count} fetched) with sufficient length.")
 
 def display_difference_analysis(analysis: str) -> None:
@@ -82,7 +94,99 @@ def display_eu_ai_act_note() -> None:
         Assessing specific risks or threats according to the EU AI Act criteria would require a separate, dedicated analysis based on the Act's defined risk categories and rules, which is **not** implemented here.
     """)
 
-def display_eu_ai_act_classification(classification_result: dict) -> None:
+def display_cited_reviews(citations: str, reviews_df: pd.DataFrame) -> None:
+    """Display the actual content of cited reviews."""
+    if not citations or reviews_df.empty:
+        return
+        
+    # Extract review numbers from citations
+    review_numbers = set(re.findall(r'Review #(\d+)', citations))
+    
+    if not review_numbers:
+        return
+        
+    st.markdown("**Cited Reviews:**")
+    
+    # Filter reviews to show only the cited ones
+    cited_reviews = reviews_df[reviews_df['review_index'].isin([int(num) for num in review_numbers])]
+    if not cited_reviews.empty:
+        # Select and format columns for display
+        display_df = cited_reviews[['review_index', 'score', 'content', 'date', 'thumbs_up']].copy()
+        
+        # Format date if it's a datetime
+        if 'date' in display_df.columns and pd.api.types.is_datetime64_any_dtype(display_df['date']):
+            display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d %H:%M')
+        
+        # Rename columns for better display
+        display_df.columns = ['Review #', 'Rating', 'Content', 'Date', 'Thumbs Up']
+        
+        # Display the DataFrame
+        st.dataframe(display_df, use_container_width=True)
+
+def display_supporting_reviews(supporting_reviews: str, reviews_df: pd.DataFrame) -> None:
+    """Display the supporting reviews with their explanations."""
+    if not supporting_reviews or reviews_df.empty:
+        return
+        
+    st.markdown("**Supporting Reviews:**")
+    
+    # Split the supporting reviews into individual review sections
+    review_sections = supporting_reviews.split('- Review #')
+    review_sections = [s for s in review_sections if s.strip()]
+    
+    for section_text in review_sections:
+        original_section_text_for_warning = section_text[:150] # For cleaner error messages
+        try:
+            # Extract review number part and the rest of the section
+            num_part, rest_of_section = section_text.split(':', 1)
+            review_num_str = num_part.strip()
+            review_num = int(review_num_str) # Potential ValueError
+
+            # Extract content (quote) and explanation
+            # The rest_of_section should be "QUOTE How it supports: EXPLANATION"
+            # Make the split case-insensitive by converting to lower case
+            rest_lower = rest_of_section.lower()
+            separator_pos = rest_lower.find('how it supports:')
+            
+            content = ""
+            explanation = ""
+
+            if separator_pos != -1:
+                # Use the position from the lowercase search to split the original string
+                content = rest_of_section[:separator_pos].strip()
+                explanation = rest_of_section[separator_pos + len('how it supports:'):].strip()
+            else:
+                # 'How it supports:' separator is missing
+                st.warning(f"Missing 'How it supports:' separator for review #{review_num_str}. Treating all as quote. Section: '{original_section_text_for_warning}...'")
+                content = rest_of_section.strip()
+                explanation = "N/A (separator missing)"
+
+            # Get the review from the DataFrame using review_index
+            try:
+                review = reviews_df[reviews_df['review_index'] == review_num].iloc[0]
+                
+                # Display review information
+                st.markdown(f"**Review #{review_num} (Rating: {review['score']}⭐)**")
+                st.markdown("**Original Review:**")
+                st.markdown(f"_{review['content']}_")
+                st.markdown("**Relevant Quote:**")
+                st.markdown(f"_{content}_")
+                st.markdown("**How it supports the classification:**")
+                st.markdown(explanation)
+                st.caption(f"Date: {review['date']} | Thumbs Up: {review['thumbs_up']}")
+                st.divider()
+            except IndexError:
+                st.warning(f"No review found with index {review_num}. Total reviews in dataset: {len(reviews_df)}")
+                continue
+                
+        except ValueError: # Handles error from int(review_num_str)
+            st.warning(f"Could not parse review number from '{review_num_str if 'review_num_str' in locals() else section_text.split(':')[0].strip()}'. Section: '{original_section_text_for_warning}...'")
+            continue
+        except Exception as e: # Catch any other unexpected error during section processing
+            st.warning(f"Error processing review section starting with '{original_section_text_for_warning}...', Error: {str(e)}")
+            continue
+
+def display_eu_ai_act_classification(classification_result: dict, reviews_df: Optional[pd.DataFrame] = None) -> None:
     """Display the EU AI Act classification results."""
     st.subheader("EU AI Act Classification")
     
@@ -107,10 +211,16 @@ def display_eu_ai_act_classification(classification_result: dict) -> None:
     if triggered_questions:
         st.markdown("**Triggering Criteria:**")
         for trigger in triggered_questions:
-            st.markdown(f"- **Question:** _{trigger['question']}_")
-            st.markdown(f"  - **Reasoning:** {trigger['reasoning']}")
-            # Optionally display confidence for individual triggers if needed
-            # st.markdown(f"  - Confidence: {trigger.get('confidence', 'N/A'):.2f}") 
+            with st.expander(f"Question: {trigger['question']}", expanded=True):
+                if trigger.get('reasoning'):
+                    st.markdown("**Reasoning:**")
+                    st.markdown(trigger['reasoning'])
+                
+                if trigger.get('supporting_reviews') and reviews_df is not None:
+                    display_supporting_reviews(trigger['supporting_reviews'], reviews_df)
+                
+                # Optionally display confidence for individual triggers if needed
+                # st.markdown(f"**Confidence:** {trigger.get('confidence', 'N/A'):.2f}")
         st.write(" ") # Add some space
     elif risk_type == "Minimal Risk":
         st.markdown("No specific criteria for higher risk levels were triggered.")
@@ -157,12 +267,17 @@ def display_analysis_results(results: AnalysisResults, app_name: str) -> None:
         # Display difference analysis
         display_difference_analysis(results.difference_analysis)
         
-        # Display sample reviews
+        # Display sample reviews in an expander
         display_sample_reviews(results.filtered_reviews_sample)
         
         # Display EU AI Act classification if available
         if hasattr(results, 'eu_ai_act_classification') and results.eu_ai_act_classification:
-            display_eu_ai_act_classification(results.eu_ai_act_classification)
+            # Use the full filtered reviews dataset if available, otherwise fall back to sample
+            reviews_for_display = getattr(results, 'filtered_reviews', results.filtered_reviews_sample)
+            display_eu_ai_act_classification(
+                results.eu_ai_act_classification,
+                reviews_for_display
+            )
         else:
             # Display EU AI Act note if no classification is available
             display_eu_ai_act_note()
