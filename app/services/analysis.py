@@ -5,21 +5,21 @@ import time
 from typing import Optional, Literal, Dict, Any, List
 import pandas as pd
 import streamlit as st
-from openai import OpenAI
+from openai import OpenAI, vector_stores, files
+import os
+import tempfile
 from pydantic import BaseModel
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.neighbors import NearestNeighbors
+from utils.review_filter import ReviewFilter
 
 from models.app_data import AppDetails, AnalysisResults
 from services.logger import logger, StatusLogger
 from services.cache import CacheService
 from config.settings import OPENAI_MODEL
-from utils.data_utils import filter_reviews_by_length, prepare_reviews_for_analysis
+from utils.data_utils import prepare_reviews_for_analysis, create_review_vector_db, get_relevant_reviews
 import openai
 
 class EUAIActResponse(BaseModel):
@@ -63,93 +63,6 @@ class AnalysisService:
             logger.error(f"Failed to initialize OpenAI client: {e}", exc_info=True)
             raise
 
-    
-    def _create_review_vector_db(self, filtered_df: pd.DataFrame, log: StatusLogger) -> dict:
-        """Create a vector database from the reviews for semantic search using OpenAI API."""
-        log.update(label="Creating vector database from reviews...")
-        
-        try:
-            # Extract review texts and indices
-            review_texts = filtered_df['content'].tolist()
-            review_indices = filtered_df['review_index'].tolist()
-            
-            # Generate embeddings using OpenAI API
-            response = openai.embeddings.create(
-                model="text-embedding-ada-002",
-                input=review_texts
-            )
-            
-            # Access the embeddings from the response
-            embeddings = [item.embedding for item in response.data]
-            
-            # Normalize embeddings for cosine similarity
-            embeddings = np.array(embeddings)
-            embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-            
-            # Create a NearestNeighbors index
-            nn_model = NearestNeighbors(metric='cosine', algorithm='brute')
-            nn_model.fit(embeddings)
-            
-            log.info(f"Created vector database with {len(review_texts)} reviews")
-            
-            return {
-                'model': "text-embedding-ada-002",  # Store model name
-                'nn_model': nn_model,  # Store NearestNeighbors model
-                'embeddings': embeddings,  # Keep raw embeddings for reference
-                'review_texts': review_texts,
-                'review_indices': review_indices
-            }
-        except Exception as e:
-            log.error(f"Error creating review vector database: {e}", exc_info=True)
-            # Return an empty DB if there's an error
-            return {
-                'model': None,
-                'nn_model': None,
-                'embeddings': None,
-                'review_texts': [],
-                'review_indices': []
-            }
-
-    def _get_relevant_reviews(self, query: str, review_db: dict, top_k: int = 5) -> List[dict]:
-        """Retrieve reviews most relevant to the query from the vector database using OpenAI API."""
-        # Explicitly check if embeddings are None
-        if review_db['embeddings'] is None or review_db['nn_model'] is None:
-            logger.warning("Review database is empty or not initialized.")
-            return []
-        
-        try:
-            # Generate query embedding using OpenAI API
-            response = openai.embeddings.create(
-                model="text-embedding-ada-002",
-                input=[query]
-            )
-            
-            # Access the query embedding from the response
-            query_embedding = np.array(response.data[0].embedding)
-            
-            # Normalize the query embedding
-            query_embedding = query_embedding / np.linalg.norm(query_embedding)
-            
-            # Use NearestNeighbors to find the top_k most similar reviews
-            distances, indices = review_db['nn_model'].kneighbors([query_embedding], n_neighbors=top_k)
-            
-            # Format the results
-            relevant_reviews = []
-            for i, idx in enumerate(indices[0]):  # indices is a 2D array
-                review_text = review_db['review_texts'][idx]
-                review_index = review_db['review_indices'][idx]
-                similarity_score = 1 - distances[0][i]  # Convert cosine distance to similarity
-                
-                relevant_reviews.append({
-                    'review_index': review_index,
-                    'text': review_text,
-                    'similarity': similarity_score
-                })
-            
-            return relevant_reviews
-        except Exception as e:
-            logger.error(f"Error retrieving relevant reviews: {e}", exc_info=True)
-            return []
     
     def analyze_reviews(self, app_name: str, app_id: str, reviews_text: str, 
                        status_logger: Optional[StatusLogger] = None) -> str:
@@ -297,29 +210,31 @@ Difference Analysis:
         results.raw_review_count = len(reviews_df)
         log.write(f"Raw reviews fetched: {results.raw_review_count}")
         
-        # # Try to get filtered reviews from cache
-        # filtered_df = self.cache_service.get_cached_dataframe(app_details.app_id, "filtered_reviews")
-        # if filtered_df is not None:
-        #     log.info(f"Using cached filtered reviews for {app_details.name}")
-        #     results.filtered_review_count = len(filtered_df)
-        #     results.filtered_reviews = filtered_df  # Store complete filtered DataFrame
-        #     results.filtered_reviews_sample = filtered_df.head()  # Store sample for display
-        #     log.write(f"✓ Using cached filtered reviews: {results.filtered_review_count} reviews.")
-        # else:
-        #     # Filter reviews
-        #     log.update(label=f"Filtering reviews for {app_details.name}...")
-        #     # Make sure we have review_index column
-        #     if 'review_index' not in reviews_df.columns:
-        #         reviews_df['review_index'] = range(1, len(reviews_df) + 1)
+        # Try to get filtered reviews from cache
+        filtered_df = self.cache_service.get_cached_dataframe(app_details.app_id, "filtered_reviews")
+        if filtered_df is not None:
+            log.info(f"Using cached filtered reviews for {app_details.name}")
+            results.filtered_review_count = len(filtered_df)
+            results.filtered_reviews = filtered_df  # Store complete filtered DataFrame
+            results.filtered_reviews_sample = filtered_df.head()  # Store sample for display
+            log.write(f"✓ Using cached filtered reviews: {results.filtered_review_count} reviews.")
+        else:
+            # Filter reviews
+            log.update(label=f"Filtering reviews for {app_details.name}...")
+            # Make sure we have review_index column
+            if 'review_index' not in reviews_df.columns:
+                reviews_df['review_index'] = range(1, len(reviews_df) + 1)
+
+            # Filter informative reviews if requested
+            review_filter = ReviewFilter()
+            filtered_df = review_filter.filter_informative_reviews(reviews_df, status_logger)
+            results.filtered_review_count = len(filtered_df)
+            results.filtered_reviews = filtered_df  # Store complete filtered DataFrame
+            results.filtered_reviews_sample = filtered_df.head()  # Store sample for display
             
-        #     filtered_df = filter_reviews_by_length(reviews_df)
-        #     results.filtered_review_count = len(filtered_df)
-        #     results.filtered_reviews = filtered_df  # Store complete filtered DataFrame
-        #     results.filtered_reviews_sample = filtered_df.head()  # Store sample for display
-            
-        #     # Cache the filtered reviews
-        #     self.cache_service.cache_dataframe(app_details.app_id, "filtered_reviews", filtered_df)
-        #     log.write(f"✓ Filtered reviews: {results.filtered_review_count} remaining (with sufficient length).")
+            # Cache the filtered reviews
+            self.cache_service.cache_dataframe(app_details.app_id, "filtered_reviews", filtered_df)
+            log.write(f"✓ Filtered reviews: {results.filtered_review_count} remaining (with sufficient length).")
         
         # # Check if we have filtered reviews
         # if filtered_df.empty:
@@ -469,7 +384,7 @@ Difference Analysis:
             input_description += f"\n\nAnalysis of Differences (User Reviews vs. Developer Claims):\n---\n{difference_analysis}\n---"
         
         # Create vector database from filtered reviews
-        review_db = self._create_review_vector_db(filtered_reviews_df, log)
+        review_db = create_review_vector_db(filtered_reviews_df, log)
         
         # Process risk types from highest to lowest risk
         risk_types = ["Unacceptable risk", "High risk", "Limited risk"]
@@ -491,7 +406,7 @@ Difference Analysis:
                 for _, row in risk_prompts.iterrows():
                     prompt_text = row['Prompt']
                     # Retrieve relevant reviews for this prompt
-                    relevant_reviews = self._get_relevant_reviews(prompt_text, review_db, top_k=8)
+                    relevant_reviews = get_relevant_reviews(prompt_text, review_db, top_k=10)
                     future = executor.submit(
                         self._evaluate_single_prompt,
                         prompt_text,

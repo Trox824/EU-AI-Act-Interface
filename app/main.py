@@ -103,7 +103,7 @@ def main():
                     analysis_results.eu_ai_act_classification = analysis_service.perform_eu_ai_act_classification(
                         app_details, 
                         analysis_results.difference_analysis,
-                        reviews_df,
+                        analysis_results.filtered_reviews,
                         eu_ai_act_prompts,
                         status_logger
                     )

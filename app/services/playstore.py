@@ -7,7 +7,6 @@ from services.logger import logger, StatusLogger
 from services.selenium_scraper import SeleniumScraperService
 from config.settings import MAX_REVIEWS_TO_FETCH, MAX_SEARCH_RESULTS
 from utils.data_utils import create_reviews_dataframe
-from services.review_filter import ReviewFilter
 
 class PlayStoreService:
     def __init__(self):
@@ -102,7 +101,7 @@ class PlayStoreService:
             return AppDetails.from_minimal(app_id, app_name)
     
     def get_app_reviews(self, app_id: str, app_name: str, status_logger: Optional[StatusLogger] = None, 
-                    max_reviews: int = MAX_REVIEWS_TO_FETCH, filter_informative: bool = True) -> pd.DataFrame:
+                    max_reviews: int = MAX_REVIEWS_TO_FETCH) -> pd.DataFrame:
         log = status_logger or logger
         log.info(f"Fetching reviews for {app_name} (up to {max_reviews})...")
         
@@ -127,12 +126,6 @@ class PlayStoreService:
             # Convert list of Review objects to DataFrame
             reviews_df = create_reviews_dataframe(review_objects)
             log.info(f"Converted {len(reviews_df)} reviews to DataFrame.")
-            
-            # Filter informative reviews if requested
-            if filter_informative and not reviews_df.empty:
-                log.info("Filtering for informative reviews...")
-                review_filter = ReviewFilter()
-                reviews_df = review_filter.filter_informative_reviews(reviews_df, status_logger)
             
             return reviews_df
             
