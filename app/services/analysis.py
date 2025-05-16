@@ -2,20 +2,25 @@
 Service for interacting with OpenAI for analysis.
 """
 import time
-from typing import Optional, Literal, Dict, Any
+from typing import Optional, Literal, Dict, Any, List
 import pandas as pd
 import streamlit as st
-from openai import OpenAI
+from openai import OpenAI, vector_stores, files
+import os
+import tempfile
 from pydantic import BaseModel
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
+import numpy as np
+from utils.review_filter import ReviewFilter
 
 from models.app_data import AppDetails, AnalysisResults
 from services.logger import logger, StatusLogger
 from services.cache import CacheService
 from config.settings import OPENAI_MODEL
-from utils.data_utils import filter_reviews_by_length, prepare_reviews_for_analysis
+from utils.data_utils import prepare_reviews_for_analysis, create_review_vector_db, get_relevant_reviews
+import openai
 
 class EUAIActResponse(BaseModel):
     answer: Literal["Yes", "No"]
@@ -41,8 +46,10 @@ class AnalysisService:
     def __init__(self, api_key: Optional[str] = None):
         try:
             if api_key:
+                openai.api_key = api_key
                 self.client = OpenAI(api_key=api_key)
             else:
+                openai.api_key = st.secrets["OPENAI_API_KEY"]
                 self.client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
             
             # Initialize cache service
@@ -55,6 +62,7 @@ class AnalysisService:
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}", exc_info=True)
             raise
+
     
     def analyze_reviews(self, app_name: str, app_id: str, reviews_text: str, 
                        status_logger: Optional[StatusLogger] = None) -> str:
@@ -216,8 +224,10 @@ Difference Analysis:
             # Make sure we have review_index column
             if 'review_index' not in reviews_df.columns:
                 reviews_df['review_index'] = range(1, len(reviews_df) + 1)
-            
-            filtered_df = filter_reviews_by_length(reviews_df)
+
+            # Filter informative reviews if requested
+            review_filter = ReviewFilter()
+            filtered_df = review_filter.filter_informative_reviews(reviews_df, status_logger)
             results.filtered_review_count = len(filtered_df)
             results.filtered_reviews = filtered_df  # Store complete filtered DataFrame
             results.filtered_reviews_sample = filtered_df.head()  # Store sample for display
@@ -226,28 +236,28 @@ Difference Analysis:
             self.cache_service.cache_dataframe(app_details.app_id, "filtered_reviews", filtered_df)
             log.write(f"✓ Filtered reviews: {results.filtered_review_count} remaining (with sufficient length).")
         
-        # Check if we have filtered reviews
-        if filtered_df.empty:
-            log.warning(f"No reviews met the minimum length requirement for {app_details.name}.")
-            results.error = "No sufficiently long reviews found for analysis."
-            return results
+        # # Check if we have filtered reviews
+        # if filtered_df.empty:
+        #     log.warning(f"No reviews met the minimum length requirement for {app_details.name}.")
+        #     results.error = "No sufficiently long reviews found for analysis."
+        #     return results
         
         # Prepare text for analysis
-        reviews_text = prepare_reviews_for_analysis(filtered_df)
+        reviews_text = prepare_reviews_for_analysis(reviews_df)
         
-        # Analyze reviews
-        results.user_review_analysis = self.analyze_reviews(
-            app_details.name, app_details.app_id, reviews_text, status_logger=log
-        )
+        # # Analyze reviews
+        # results.user_review_analysis = self.analyze_reviews(
+        #     app_details.name, app_details.app_id, reviews_text, status_logger=log
+        # )
         
-        # Check if review analysis succeeded
-        if results.user_review_analysis.startswith("Error analyzing reviews:"):
-            results.error = results.user_review_analysis
-            return results
+        # # Check if review analysis succeeded
+        # if results.user_review_analysis.startswith("Error analyzing reviews:"):
+        #     results.error = results.user_review_analysis
+        #     return results
         
         # Analyze difference
         results.difference_analysis = self.analyze_difference(
-            app_details, results.user_review_analysis, status_logger=log
+            app_details, reviews_text, status_logger=log
         )
         
         # Check if difference analysis succeeded
@@ -257,9 +267,15 @@ Difference Analysis:
         
         return results
     
-    def _evaluate_single_prompt(self, question_text: str, input_description: str, log: StatusLogger) -> Optional[EvaluationResult]:
-        """Evaluate a single prompt for EU AI Act classification."""
+    def _evaluate_single_prompt(self, question_text: str, input_description: str, 
+                               relevant_reviews: List[dict], log: StatusLogger) -> Optional[EvaluationResult]:
+        """Evaluate a single prompt for EU AI Act classification using relevant reviews."""
         try:
+            # Format relevant reviews for the prompt
+            reviews_text = ""
+            for review in relevant_reviews:
+                reviews_text += f"- Review #{review['review_index']}: {review['text']}\n"
+            
             prompt = f"""Evaluate the following question about an AI app based on the provided information.
             Answer with ONLY Yes or No, followed by your reasoning.
 
@@ -267,6 +283,9 @@ Difference Analysis:
 
             App information:
             {input_description}
+            
+            Relevant User Reviews:
+            {reviews_text}
 
             If your answer is Yes, you MUST:
             1. Explain your reasoning
@@ -298,7 +317,7 @@ Difference Analysis:
                 return EvaluationResult(
                     question=question_text,
                     reasoning=parsed_response.reasoning,
-                    supporting_reviews=parsed_response.supporting_reviews,
+                    supporting_reviews=reviews_text,
                     confidence=1.0
                 )
                 
@@ -335,8 +354,8 @@ Difference Analysis:
         
         return None
 
-    def perform_eu_ai_act_classification(self, app_details: AppDetails, reviews_analysis: str,
-                                        difference_analysis: str,
+    def perform_eu_ai_act_classification(self, app_details: AppDetails,
+                                        difference_analysis: str, filtered_reviews_df: pd.DataFrame,
                                         prompts_df: pd.DataFrame, status_logger: Optional[StatusLogger] = None) -> dict:
         log = status_logger or logger
         app_id = app_details.app_id
@@ -361,10 +380,11 @@ Difference Analysis:
         
         # Add review analysis and difference analysis if available
         input_description = base_description
-        if reviews_analysis and not reviews_analysis.startswith("Error"):
-            input_description += f"\n\nUser Review Analysis Summary:\n---\n{reviews_analysis}\n---"
         if difference_analysis and not difference_analysis.startswith("Error"):
             input_description += f"\n\nAnalysis of Differences (User Reviews vs. Developer Claims):\n---\n{difference_analysis}\n---"
+        
+        # Create vector database from filtered reviews
+        review_db = create_review_vector_db(filtered_reviews_df, log)
         
         # Process risk types from highest to lowest risk
         risk_types = ["Unacceptable risk", "High risk", "Limited risk"]
@@ -382,15 +402,19 @@ Difference Analysis:
             triggered_questions_info = []
             with ThreadPoolExecutor(max_workers=5) as executor:
                 # Submit all prompts for this risk level
-                future_to_prompt = {
-                    executor.submit(
+                future_to_prompt = {}
+                for _, row in risk_prompts.iterrows():
+                    prompt_text = row['Prompt']
+                    # Retrieve relevant reviews for this prompt
+                    relevant_reviews = get_relevant_reviews(prompt_text, review_db, top_k=10)
+                    future = executor.submit(
                         self._evaluate_single_prompt,
-                        row['Prompt'],
+                        prompt_text,
                         input_description,
+                        relevant_reviews,
                         log
-                    ): row['Prompt']
-                    for _, row in risk_prompts.iterrows()
-                }
+                    )
+                    future_to_prompt[future] = prompt_text
                 
                 # Collect results as they complete
                 for future in as_completed(future_to_prompt):
@@ -404,6 +428,7 @@ Difference Analysis:
                 overall_confidence = max(info.confidence for info in triggered_questions_info) if triggered_questions_info else 0.0
                 
                 result = {
+                    'filtered_reviews': filtered_reviews_df,
                     'risk_type': risk_type,
                     'confidence_score': overall_confidence,
                     'triggered_questions': [
@@ -430,4 +455,4 @@ Difference Analysis:
         
         # Cache the result
         self.cache_service.cache_analysis(app_id, "eu_ai_act", result)
-        return result 
+        return result

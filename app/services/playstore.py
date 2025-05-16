@@ -101,7 +101,7 @@ class PlayStoreService:
             return AppDetails.from_minimal(app_id, app_name)
     
     def get_app_reviews(self, app_id: str, app_name: str, status_logger: Optional[StatusLogger] = None, 
-                        max_reviews: int = MAX_REVIEWS_TO_FETCH) -> pd.DataFrame:
+                    max_reviews: int = MAX_REVIEWS_TO_FETCH) -> pd.DataFrame:
         log = status_logger or logger
         log.info(f"Fetching reviews for {app_name} (up to {max_reviews})...")
         
@@ -135,7 +135,7 @@ class PlayStoreService:
             
         except Exception as e:
             log.error(f"Error retrieving reviews for {app_name}: {e}", exc_info=True)
-            return pd.DataFrame() # Return empty DataFrame
+            return pd.DataFrame() 
     
     def get_app_details_and_reviews(self, app_id: str, app_name: str, 
                                    status_logger: Optional[StatusLogger] = None) -> Tuple[AppDetails, pd.DataFrame]:
