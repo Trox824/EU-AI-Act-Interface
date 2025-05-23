@@ -1,0 +1,13 @@
+streamlit
+pandas
+openai
+google-play-scraper
+tqdm
+selenium
+beautifulsoup4
+webdriver-manager
+pydantic>=2.0.0 
+nltk
+numpy==2.0.2 
+scipy==1.15.2 
+scikit-learn==1.6.1
