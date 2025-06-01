@@ -129,20 +129,33 @@ def display_supporting_reviews(supporting_reviews: str, reviews_df: pd.DataFrame
         return
 
     st.markdown("**Supporting Reviews:**")
-
-    # Split the supporting reviews into individual review sections
-    review_sections = supporting_reviews.split('- Review #')
-    review_sections = [s for s in review_sections if s.strip()]
-
-    for section_text in review_sections:
+    
+    # Use regex to find all review numbers mentioned in the text
+    review_numbers = re.findall(r'Review #(\d+)', supporting_reviews)
+    
+    if not review_numbers:
+        # If no review numbers found, display the raw text
+        st.markdown(supporting_reviews)
+        return
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_review_numbers = []
+    for num in review_numbers:
+        if num not in seen:
+            seen.add(num)
+            unique_review_numbers.append(int(num))
+    
+    # Display each unique review
+    for review_num in unique_review_numbers:
         try:
-            # Extract review number part and the rest of the section
-            num_part, _ = section_text.split(':', 1)
-            review_num_str = num_part.strip()
-            review_num = int(review_num_str)  # Convert to integer
-
             # Get the review from the DataFrame using review_index
-            review = reviews_df[reviews_df['review_index'] == review_num].iloc[0]
+            matching_reviews = reviews_df[reviews_df['review_index'] == review_num]
+            if matching_reviews.empty:
+                st.warning(f"No review found with index {review_num}. Total reviews in dataset: {len(reviews_df)}")
+                continue
+                
+            review = matching_reviews.iloc[0]
 
             # Display review information
             st.markdown(f"**Review #{review_num} (Rating: {review['score']}⭐)**")
@@ -150,15 +163,14 @@ def display_supporting_reviews(supporting_reviews: str, reviews_df: pd.DataFrame
             st.caption(f"Date: {review['date']} | Thumbs Up: {review['thumbs_up']}")
             st.divider()
 
-        except IndexError:
-            st.warning(f"No review found with index {review_num}. Total reviews in dataset: {len(reviews_df)}")
-            continue
-        except ValueError:
-            st.warning(f"Could not parse review number from '{section_text.split(':')[0].strip()}'.")
-            continue
         except Exception as e:
-            st.warning(f"Error processing review section: {str(e)}")
+            st.warning(f"Error processing review #{review_num}: {str(e)}")
             continue
+    
+    # Also display the original supporting text for context
+    if len(unique_review_numbers) > 0:
+        with st.expander("Analysis Context", expanded=False):
+            st.markdown(supporting_reviews)
 
 import csv
 
@@ -277,8 +289,13 @@ def display_analysis_results(results: AnalysisResults, app_name: str, prompts_pa
         # Display EU AI Act classification if available
         if hasattr(results, 'eu_ai_act_classification') and results.eu_ai_act_classification:
             # Use the full filtered reviews dataset if available, otherwise fall back to sample
-            reviews_for_display = results.eu_ai_act_classification['filtered_reviews']
-            print(f"Reviews for display: {reviews_for_display}")
+            reviews_for_display = results.eu_ai_act_classification.get('filtered_reviews')
+            
+            # If filtered_reviews is not in the classification result, use the one from results
+            if reviews_for_display is None:
+                reviews_for_display = results.filtered_reviews
+            
+            print(f"Reviews for display: {type(reviews_for_display)} with {len(reviews_for_display) if reviews_for_display is not None else 0} reviews")
             display_eu_ai_act_classification(
                 results.eu_ai_act_classification,
                 prompts_path,

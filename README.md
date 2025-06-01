@@ -85,3 +85,6 @@ The project follows a modular architecture:
 ## License
 
 [MIT](LICENSE)
+
+
+python3.10 -m streamlit run app/main.py

@@ -276,32 +276,43 @@ Difference Analysis:
             for review in relevant_reviews:
                 reviews_text += f"- Review #{review['review_index']}: {review['text']}\n"
             
-            prompt = f"""Evaluate the following question about an AI app based on the provided information.
-            Answer with ONLY Yes or No, followed by your reasoning.
+            prompt = f"""You are evaluating whether an AI app meets specific EU AI Act criteria. You must be EXTREMELY STRICT and evidence-based in your evaluation.
 
-            Question: {question_text}
+CRITICAL INSTRUCTIONS:
+1. Answer "Yes" ONLY if there is CONCRETE EVIDENCE from app features, functionality, or developer descriptions
+2. DO NOT answer "Yes" based on user complaints, bugs, crashes, or general dissatisfaction
+3. DO NOT answer "Yes" based on theoretical possibilities or potential for harm
+4. Focus on INTENTIONAL APP DESIGN and FEATURES, not user-reported problems
+5. Distinguish between app malfunctions vs. designed manipulation/exploitation
 
-            App information:
-            {input_description}
-            
-            Relevant User Reviews:
-            {reviews_text}
+Question: {question_text}
 
-            If your answer is Yes, you MUST:
-            1. Explain your reasoning
-            2. Cite specific user reviews that support your answer (use format: "Review #X")
-            3. Quote the relevant parts of those reviews
-            4. Explain how each cited review supports your answer
+App Information (Developer Claims & Features):
+{input_description}
 
-            Format your response as:
-            Answer: [Yes/No]
-            Reasoning: [Your detailed reasoning]
-            Supporting Reviews:
-            - Review #[number]: [Quote the relevant part]
-              How it supports: [Explain how this review supports your answer]
-            - Review #[number]: [Quote the relevant part]
-              How it supports: [Explain how this review supports your answer]
-            """
+User Reviews (for context only - focus on app features mentioned, not complaints):
+{reviews_text}
+
+EVALUATION CRITERIA:
+- For manipulation/deception questions: Look for evidence of INTENTIONAL design to manipulate (e.g., dark patterns, misleading interfaces, designed addiction mechanisms)
+- For vulnerability exploitation: Look for evidence the app is DESIGNED to target vulnerable groups, not just that vulnerable users happen to use it
+- For age/disability exploitation: Look for evidence the app specifically targets or exploits these vulnerabilities by design
+- For behavioral distortion: Look for evidence of INTENTIONAL features designed to distort behavior, not just addictive content
+- For social scoring: Look for evidence of actual scoring systems that affect user treatment
+- For biometric/emotion recognition: Look for evidence these features actually exist in the app
+- For law enforcement use: Look for evidence the app is designed for or marketed to law enforcement
+
+ANSWER REQUIREMENTS:
+- Answer "Yes" ONLY with concrete evidence from app features or design
+- Answer "No" if evidence is based on user complaints, bugs, or theoretical harm
+- Answer "No" if you're unsure or evidence is weak
+- Your reasoning must cite specific app features, not user dissatisfaction
+
+Format your response as:
+Answer: [Yes/No]
+Reasoning: [Explain based on app features and design, not user complaints]
+Supporting Reviews: [Only if answering Yes - cite reviews that mention specific app features supporting your answer]
+"""
 
             response = self.client.beta.chat.completions.parse(
                 model=OPENAI_MODEL,
@@ -317,7 +328,7 @@ Difference Analysis:
                 return EvaluationResult(
                     question=question_text,
                     reasoning=parsed_response.reasoning,
-                    supporting_reviews=reviews_text,
+                    supporting_reviews=parsed_response.supporting_reviews,
                     confidence=1.0
                 )
                 
@@ -327,13 +338,13 @@ Difference Analysis:
             # Simple fallback without parsing
             try:
                 fallback_prompt = (
-                    "Answer with ONLY Yes or No:\n"
+                    "Answer with ONLY Yes or No. Be extremely strict - only answer Yes with concrete evidence of intentional app design that meets the criteria:\n"
                     f"Question: {question_text}\n"
                     f"App information: {input_description}"
                 )
                 
                 fallback_response = self.client.beta.chat.completions.parse(
-                    model="gpt-4.1-mini",
+                    model="gpt-4.1",
                     messages=[{"role": "user", "content": fallback_prompt}],
                     response_format=FallbackResponse,
                     temperature=0.1
@@ -345,8 +356,8 @@ Difference Analysis:
                     log.logger.info(f"✓ [Fallback] Evaluated '{question_text}' as Yes")
                     return EvaluationResult(
                         question=question_text,
-                        reasoning=response_text,
-                        confidence=0.8
+                        reasoning="Fallback evaluation - requires manual review",
+                        confidence=0.5
                     )
                     
             except Exception as fallback_error:
@@ -448,6 +459,7 @@ Difference Analysis:
         
         # If no risk type was triggered, classify as minimal risk
         result = {
+            'filtered_reviews': filtered_reviews_df,
             'risk_type': "Minimal Risk",
             'confidence_score': 1.0,
             'triggered_questions': []
