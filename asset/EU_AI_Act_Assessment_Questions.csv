@@ -1,22 +1,15 @@
 Type,Prompt,Snippet
 Unacceptable risk,Does the AI system deploy subliminal techniques that act beyond a user’s conscious perception?,1a
 Unacceptable risk,Is the system designed to manipulate or deceive users in ways that could materially distort their behaviour?,1a
-Unacceptable risk,Could the system appreciably impair an individual’s ability to make an informed decision about a consequential action?,1a
 Unacceptable risk,"Is the AI intended to cause, or is it reasonably likely to cause, significant harm through behavioural manipulation?",1a
-Unacceptable risk,"Does the system exploit vulnerabilities related to a person’s age (e.g., children or the elderly)?",1b
-Unacceptable risk,Does the system exploit vulnerabilities related to a person’s disability?,1b
 Unacceptable risk,Does the system exploit vulnerabilities tied to a person’s specific social or economic situation?,1b
 Unacceptable risk,Could exploiting any such vulnerability materially distort the behaviour of those individuals?,1b
 Unacceptable risk,Does the AI evaluate or classify people over time based on their social behaviour to generate a “social score”?,1c
-Unacceptable risk,Could that social score lead to unfavourable treatment in contexts unrelated to where the underlying data were collected?,1c
 Unacceptable risk,Could the social scoring result in treatment that is unjustified or disproportionate to the assessed behaviour?,1c
 Unacceptable risk,Is the system used to predict or assess the risk that a person will commit a criminal offence based solely on profiling or personality traits?,1d
-Unacceptable risk,Does the AI create or expand facial-recognition databases by scraping facial images from the internet without targeted consent?,1e
-Unacceptable risk,Does the AI create or expand facial-recognition databases by scraping CCTV footage without targeted consent?,1e
-Unacceptable risk,Is the system used to infer emotions of individuals in workplaces?,1f
-Unacceptable risk,Is the system used to infer emotions of individuals in educational institutions?,1f
-Unacceptable risk,"Does the AI categorise people’s biometric data to infer sensitive attributes such as race, political opinions, or religious beliefs?",1g
-Unacceptable risk,Does the system categorise biometric data to infer sex life or sexual orientation of individuals?,1g
+Unacceptable risk,Does the AI create or expand facial-recognition databases by scraping facial images from the internet or CCTV without targeted consent?,1e
+Unacceptable risk,Is the system used to infer emotions of individuals in workplaces or educational institutions?,1f
+Unacceptable risk,"Does the AI categorise people’s biometric data to infer sensitive attributes such as sex life, sexual orientation, race, political opinions, or religious beliefs?",1g
 Unacceptable risk,Is the AI a “real-time” remote biometric identification system intended for use in publicly accessible spaces by law-enforcement authorities?,1h
 Unacceptable risk,"If used by law enforcement, is the system intended to identify individuals without a prior, specific judicial or administrative authorisation?",1h
 High risk,Is the AI system a remote biometric identification tool used to recognise individuals at a distance?,1a
@@ -29,7 +22,6 @@ High risk,Does the AI decide admission or access for students to educational or 
 High risk,Does the system evaluate learning outcomes to steer or adapt a learner’s path?,3b
 High risk,Does the AI assess which education level an individual will receive or can access?,3c
 High risk,Is the system used to monitor or detect prohibited behaviour during student examinations?,3d
-High risk,Does the AI place targeted job advertisements to recruit or select candidates?,4a
 High risk,Is the system used to filter or analyse job applications or résumés for hiring decisions?,4a
 High risk,"Does the AI decide promotions, task allocation, or terminations in employment relationships?",4b
 High risk,Does the system monitor or evaluate employee performance or behaviour at work?,4b
@@ -51,10 +43,8 @@ High risk,"Does the AI detect, recognise, or identify persons for migration, asy
 High risk,"Is the AI used by judges or courts to research facts, interpret law, or apply law to specific cases?",8a
 High risk,Is the system used in alternative dispute resolution to help decide on facts or law?,8a
 High risk,Does the AI aim to influence voting behaviour or the outcome of an election or referendum by exposing voters to tailored outputs?,8b
-Limited risk,Does the AI system interact directly with users in a way that might not be obviously automated to an observant person?,1
 Limited risk,Is the system designed to alert users that they are engaging with an AI at the start of the interaction?,1
 Limited risk,"Does the AI generate synthetic text, images, audio, or video content that alters the original input or its semantics?",2
-Limited risk,Are the system’s synthetic outputs automatically tagged in a machine-readable format as artificially generated or manipulated?,2
 Limited risk,"Does the AI perform only standard, non-substantial editing functions on user-supplied content?",2
 Limited risk,Does the system include an emotion-recognition capability applied to individuals?,3
 Limited risk,Does the system include biometric categorisation that assigns people to groups based on inferred attributes?,3
